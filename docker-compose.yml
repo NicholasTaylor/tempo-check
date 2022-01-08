@@ -1,1 +1,8 @@
- 
+version: '3.8'
+
+services: 
+    datapull:
+        build: .
+        volumes:
+            - '.:/opt/tempo-check'
+        command: python tempo-check.py
