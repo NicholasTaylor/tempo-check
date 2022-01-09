@@ -3,6 +3,7 @@ import requests
 SNAP_URL = 'https://tempostorm.com/api/snapshots/findOne'
 DECK_URL = 'https://tempostorm.com/api/decks/findOne'
 FIELDNAMES = ['cardQuantity', 'name', 'cost', 'rarity', 'text', 'attack', 'health', 'cardType', 'expansion']
+LATEST_SLUG = 'latest_slug.txt'
 
 def get_current_time():
     from datetime import datetime
@@ -181,9 +182,23 @@ def get_decks(decks):
 def sort_by_rank(e):
     return e['rank']
 
-def make_csvs():
-    import csv
+def set_new_slug(slug):
+    with open(LATEST_SLUG, 'w+') as f:
+        f.write(slug)
+
+def init_check():
+    import os
     pub_date = get_slug()
+    needs_refresh = False
+    if os.path.exists(LATEST_SLUG):
+        with open(LATEST_SLUG) as f:
+            needs_refresh = False if pub_date == f.read() else True
+    else:
+        needs_refresh = True
+    return pub_date, needs_refresh
+
+def make_csvs(pub_date):
+    import csv
     decks = get_decks(get_tiers(pub_date))
     decks.sort(key=sort_by_rank)
     for deck in decks:
@@ -194,4 +209,22 @@ def make_csvs():
             for card in deck['cards']:
                 writer.writerow(card)
 
-make_csvs()
+def alert_user(pub_date):
+    from twilio.rest import Client
+    import config
+    client = Client(config.twilio_sid, config.twilio_auth_token)
+    message = client.messages.create(
+        messaging_service_sid = config.twilio_msg_svc,
+        body = 'New Meta Snapshot published %s. Decks uploaded. Check cloud computer when you can.' % (pub_date),
+        to = config.twilio_number
+    )
+    return(message.sid)    
+
+def main():
+    pub_date, needs_refresh = init_check()
+    if needs_refresh:
+        make_csvs(pub_date)
+        alert_user(pub_date)
+        set_new_slug(pub_date)
+
+main()
