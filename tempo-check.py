@@ -1,23 +1,24 @@
-import requests
+import requests, csv, os
+from datetime import datetime
 
 SNAP_URL = 'https://tempostorm.com/api/snapshots/findOne'
 DECK_URL = 'https://tempostorm.com/api/decks/findOne'
 FIELDNAMES = ['cardQuantity', 'name', 'cost', 'rarity', 'text', 'attack', 'health', 'cardType', 'expansion']
 LATEST_SLUG = 'latest_slug.txt'
-
-def get_current_time():
-    from datetime import datetime
-    now = datetime.utcnow()
-    return now.strftime('%Y-%m-%dT%H:%M:%S.') + now.strftime('%f')[:-3] + 'Z'
+LOG_FILE = 'log.csv'
+CURRENT_TIME_RAW = datetime.utcnow()
+CURRENT_TIME = CURRENT_TIME_RAW.strftime('%Y-%m-%dT%H:%M:%S')
+SLUG_QUERY_TIME = CURRENT_TIME +'.' + CURRENT_TIME_RAW.strftime('%f')[:-3] + 'Z'
+LOG_FIELD_1 = 'date_ran'
+LOG_FIELD_2 = 'needed_refresh'
 
 def get_slug():
-    current_time = get_current_time()
     json = {'filter': {
         'order': 'createdDate DESC',
         'fields': ['id', 'snapshotType', 'isActive', 'publishDate'],
         'where': {
             'isActive': True,
-            'publishDate': { 'lte': current_time },
+            'publishDate': { 'lte': SLUG_QUERY_TIME },
             'snapshotType': 'standard'
         },
         'include': [{ 'relation': 'slugs' }]
@@ -187,7 +188,6 @@ def set_new_slug(slug):
         f.write(slug)
 
 def init_check():
-    import os
     pub_date = get_slug()
     needs_refresh = False
     if os.path.exists(LATEST_SLUG):
@@ -198,7 +198,6 @@ def init_check():
     return pub_date, needs_refresh
 
 def make_csvs(pub_date):
-    import csv
     decks = get_decks(get_tiers(pub_date))
     decks.sort(key=sort_by_rank)
     for deck in decks:
@@ -220,11 +219,24 @@ def alert_user(pub_date):
     )
     return(message.sid)    
 
+def log_results(needs_refresh):
+    is_log = True if os.path.exists(LOG_FILE) else False
+    new_row = {LOG_FIELD_1: CURRENT_TIME, LOG_FIELD_2: needs_refresh}
+    with open(LOG_FILE, 'a+') as f:
+        logwriter = csv.DictWriter(f, fieldnames=[LOG_FIELD_1, LOG_FIELD_2])
+        if not(is_log):
+            logwriter.writeheader()
+        else:
+            pass
+        logwriter.writerow(new_row)
+    return new_row
+
 def main():
     pub_date, needs_refresh = init_check()
     if needs_refresh:
         make_csvs(pub_date)
         alert_user(pub_date)
         set_new_slug(pub_date)
+    log_results(needs_refresh)
 
 main()
